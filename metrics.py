@@ -57,7 +57,7 @@ class MeanXYNormRealWorld(tf.keras.metrics.Mean):
 
         super().update_state(norm, *args, **kwargs)
 
-class CenterMeanXYNormRealWorld(tf.keras.metrics.Metric):
+class CenterMeanXYNormRealWorld(tf.keras.metrics.Mean):
     def __init__(self, scaler, *args, **kwargs):
         super().__init__(name="centernormXYReal", *args, **kwargs)
         self.scaler = scaler
