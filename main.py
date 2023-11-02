@@ -23,7 +23,7 @@ import argparse
 
 class RegressionModel():
     def __init__(self) -> None:
-        self.directory_path =  '/Users/benedictkunzmann/Desktop/Bachelorarbeit/Verlauf/Modelle/20230902_version_3.1/01_measurement_data'
+        self.directory_path =  '../01_measurement_data'
         self.model = Sequential()
         self.config = wandb.config
     
