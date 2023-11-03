@@ -26,6 +26,13 @@ import wandb
 from wandb.keras import WandbMetricsLogger, WandbModelCheckpoint
 import argparse
 
+# um in den server zu kommen
+# vpn 
+# ssh gpu18
+# tmux attach -t 0
+# interactive (bleibt für 24h)
+# bash baseline.sh
+
 class RegressionModel():
     def __init__(self) -> None:
         self.directory_path =  '01_measurement_data'
