@@ -5,6 +5,8 @@ history/
 *.h5
 .DS_STORE
 *.json
+*.out
+*.err
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
