@@ -4,10 +4,15 @@ import os
 import glob
 from typing import List
 import pickle
+import math
+import tensorflow as tf
 from sklearn.preprocessing import MinMaxScaler
-from keras.models import Sequential
-from keras.layers import Input, Activation, Dense, BatchNormalization
-from keras.optimizers.schedules.learning_rate_schedule import ExponentialDecay
+from keras.models import Sequential, Model
+from keras.layers import Input, Activation, Dense, BatchNormalization, Add
+try:
+    from keras.optimizers.schedules.learning_rate_schedule import ExponentialDecay
+except ImportError:
+    from keras.optimizers.schedules import ExponentialDecay
 from keras.callbacks import CSVLogger
 from keras.initializers import HeUniform
 from sklearn.model_selection import train_test_split
@@ -23,7 +28,7 @@ import argparse
 
 class RegressionModel():
     def __init__(self) -> None:
-        self.directory_path =  '../01_measurement_data'
+        self.directory_path =  '01_measurement_data'
         self.model = Sequential()
         self.config = wandb.config
     
@@ -143,39 +148,63 @@ class RegressionModel():
         return output_weights
 
     def createScheduler(self, size: int) -> ExponentialDecay:
+        print("decay steps:", (size // self.config.batch_size) * self.config.epochs)
+        print(size, self.config.batch_size, self.config.epochs)
         return ExponentialDecay(
             initial_learning_rate= self.config.learning_rate,
-            decay_steps= (size // self.config.batch_size) * self.config.epochs,
+            decay_steps= (size // self.config.batch_size),
             decay_rate= self.config.learning_rate_decay
         )
 
     def buildModel(self):
         n_features = 4
         self.model.add(Input(shape= (n_features), name='Dense_Input'))
-        self.model.add(Dense(self.config.n_neurons, kernel_initializer= HeUniform(), name='Dense_1'))
-        self.model.add(Activation(self.config.activation_hidden, name='relu_1'))
-        self.model.add(BatchNormalization())
-        self.model.add(Dense(self.config.n_neurons, kernel_initializer= HeUniform(), name='Dense_2'))
-        self.model.add(Activation(self.config.activation_hidden, name='relu_2'))
-        self.model.add(BatchNormalization())
+        for i in range(0, self.config.layers):
+            self.model.add(Dense(self.config.n_neurons, kernel_initializer= HeUniform(), name=f'Dense_{i}'))
+            self.model.add(Activation(self.config.activation_hidden, name=f'relu_{i}'))
+            self.model.add(BatchNormalization())
         self.model.add(Dense(2, name='Dense_Out'))
         self.model.add(Activation(self.config.activation_final, name='sigmoid_Out'))
+
+    def buildModelResnet(self):
+        n_features = 4
+        inputs = Input(shape= (n_features), name='Dense_Input')
+        x = inputs
+        x = Dense(self.config.n_neurons, kernel_initializer= HeUniform(), name=f'Dense_{i}')(x)
+        x = Activation(self.config.activation_hidden, name=f'relu_{i}')(x)
+        x = BatchNormalization()(x)
+        
+        for i in range(1, self.config.layers, 2):
+            x_temp = x
+            x = Dense(self.config.n_neurons, kernel_initializer= HeUniform(), name=f'Dense_{i}')(x)
+            x = Activation(self.config.activation_hidden, name=f'relu_{i}')(x)
+            x = BatchNormalization()(x)
+            x = Dense(self.config.n_neurons, kernel_initializer= HeUniform(), name=f'Dense_{i}')(x)
+            x = Activation(self.config.activation_hidden, name=f'relu_{i}')(x)
+            x = BatchNormalization()(x)
+            x = Add()([x, x_temp])
+
+        x = Dense(2, name='Dense_Out')(x)
+        outputs = Activation(self.config.activation_final, name='sigmoid_Out')(x)
+
+        self.model = Model(inputs=inputs, outputs=outputs, name="ChatGPT-85")
 
     def compileModel(self, prescaler_target_data: MinMaxScaler, lr_scheduler: ExponentialDecay):
         optimizer = Adam(learning_rate= lr_scheduler)
         loss = MeanSquaredError()
 
-        self.model.compile(optimizer=optimizer, 
-                            loss=loss,
-                            metrics=[
-                                "mse",
-                                metrics.CenterMeanXYNormRealWorld(scaler=prescaler_target_data),
-                                metrics.MeanXYNormRealWorld(scaler=prescaler_target_data),
-                                metrics.MeanXYSquarredErrorRealWorld(scaler=prescaler_target_data),  
-                                metrics.MeanXYAbsoluteErrorRealWorld(scaler=prescaler_target_data),
-                                metrics.MeanXYRootSquarredErrorRealWorld(scaler=prescaler_target_data)
-                            ],
-                            weighted_metrics= []
+        self.model.compile(
+            optimizer=optimizer, 
+            loss=loss,
+            metrics=[
+                "mse",
+                metrics.CenterMeanXYNormRealWorld(scaler=prescaler_target_data),
+                metrics.MeanXYNormRealWorld(scaler=prescaler_target_data),
+                metrics.MeanXYSquarredErrorRealWorld(scaler=prescaler_target_data),  
+                metrics.MeanXYAbsoluteErrorRealWorld(scaler=prescaler_target_data),
+                metrics.MeanXYRootSquarredErrorRealWorld(scaler=prescaler_target_data)
+            ],
+            weighted_metrics= []
         )
 
     def trainModel(self, scaled_input_data: np.ndarray, scaled_target_data: np.ndarray, outputWeights: np.ndarray) -> None:
@@ -194,18 +223,18 @@ class RegressionModel():
         csv_logger = CSVLogger(f'logging/{identifier}.csv',
                                 append=False,
                                 separator=',')
+        callbacks = [
+            csv_logger,
+            WandbMetricsLogger(log_freq=1),
+            # mcp_save
+        ]
 
-        history = self.model.fit(
+        history =self.model.fit(
             x = scaled_input_data,
             y = scaled_target_data, 
             epochs = self.config.epochs,
             batch_size=self.config.batch_size,
-            callbacks = [
-                csv_logger,
-                WandbMetricsLogger(log_freq=1),
-                # learning_callback, 
-                # mcp_save
-            ],
+            callbacks = callbacks,
             sample_weight= pd.Series(outputWeights).to_frame('weights'),
             shuffle=True,
             validation_split= 0.3
@@ -232,7 +261,10 @@ class RegressionModel():
         weights = self.generate_weights(scaled_target_data)
         lr_scheduler = self.createScheduler(df_size)
 
-        self.buildModel()
+        if self.config.resnet:
+            self.buildModelResnet()
+        else:
+            self.buildModel()
 
         self.compileModel(scaler_target, lr_scheduler)
 
@@ -242,14 +274,16 @@ class RegressionModel():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="add specfic values for training")
     parser.add_argument('--name', type=str, default = "baseline", help='WandB Name for the run')
-    parser.add_argument('--distance', type=int, default = 250, help='Enter the distance up to which all data points should be included')
-    parser.add_argument('--n_neurons', default= 300, type=int, help='Define the number of neurons used in the hidden layers')
+    parser.add_argument('--distance', type=int, default=250, help='Enter the distance up to which all data points should be included')
+    parser.add_argument('--n_neurons', default=300, type=int, help='Define the number of neurons used in the hidden layers')
+    parser.add_argument('--n_layers', default=2, type=int, help='Define the number of layers')
     parser.add_argument('--learning_rate', default=0.001 ,type=float, help='Define the learning rate of the training')
     parser.add_argument('--decay_rate', default=0.96, type=float, help='Define the decay rate of the learning rate')
     parser.add_argument('--activation_hidden', default='relu', type=str, help='Activastion function for hidden layers')
     parser.add_argument('--activation_final', default='sigmoid', type=str, help='Activation function for final/output layer')
     parser.add_argument('--epochs', default=180, type=int, help='Number of epochs')
     parser.add_argument('--batch_size', default=32, type=int, help='Size of batches')
+    parser.add_argument('--resnet', default=False, type=bool, help="using resnet if true and if false using mlp")
     args = parser.parse_args()
 
     wandb.init(
@@ -268,7 +302,9 @@ if __name__ == "__main__":
             "loss": "mean squarred error",
             "batch_size": args.batch_size,
             "activation_hidden": args.activation_hidden,
-            "activation_final": args.activation_final
+            "activation_final": args.activation_final,
+            "layers": args.n_layers,
+            "resnet": args.resnet,
         }
     )
 
