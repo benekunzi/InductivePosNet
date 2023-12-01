@@ -10,4 +10,4 @@
 #SBATCH --mem-per-cpu=4G
 
 #SBATCH --array=1-10
-python3 main.py --name 'batch_256' --learning_rate 0.005 --decay_rate 0.80 --n_layers 11 --distance 750 --batch_size 256 --epochs 1440
+python3 main.py --name 'batch1024-Cos-Ceil-Fixed_750' --learning_rate 0.005 --decay_rate 0.80 --n_layers 11 --distance 750 --batch_size 1024 --epochs 5760
