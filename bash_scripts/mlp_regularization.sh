@@ -10,4 +10,4 @@
 #SBATCH --mem-per-cpu=4G
 
 #SBATCH --array=1-10
-python3 main.py --name 'mlp-Drop-01-regL2-1e-8_750_WE_E' --learning_rate 0.005 --decay_rate 0.80 --n_layers 11 --distance 750 --batch_size 1024 --epochs 2880 --regularization True --regularization_value 0.00000001 --dropout True --dropout_value 0.01 --extended True
+python3 main.py --name 'mlp-Drop-01-regL2-1e-8_750_WE_MScalerIO' --learning_rate 0.005 --decay_rate 0.80 --n_layers 11 --distance 750 --batch_size 1024 --epochs 2880 --regularization True --regularization_value 0.00000001 --dropout True --dropout_value 0.01 --activation_final "tanh"
