@@ -6,7 +6,7 @@ from typing import List, Tuple
 import pickle
 import math
 import tensorflow as tf
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from keras.models import Sequential, Model
 from keras.layers import Input, Activation, Dense, BatchNormalization, Add, Dropout
 try:
@@ -215,7 +215,7 @@ class RegressionModel():
 
         return final_combined_df
 
-    def load_scaler(self, path_scaler: str) -> MinMaxScaler:
+    def load_scaler(self, path_scaler: str) -> MinMaxScaler | StandardScaler:
         with open(path_scaler, 'rb') as file:
             scaler = pickle.load(file)
 
@@ -239,7 +239,7 @@ class RegressionModel():
         """Generates target data"""
         return dataframe[["x", "y"]]
 
-    def scale(self, scaler: MinMaxScaler, data: pd.DataFrame) -> np.ndarray:
+    def scale(self, scaler: MinMaxScaler | StandardScaler, data: pd.DataFrame) -> np.ndarray:
         return scaler.transform(data)
 
     def generate_weights(self, scaled_target_data: np.ndarray) -> np.ndarray:
@@ -274,7 +274,7 @@ class RegressionModel():
             self.model.add(Dropout(rate=self.config.dropout_value if self.config.dropout else 0, name=f'dropout_{i}'))
             self.model.add(BatchNormalization())
         self.model.add(Dense(2, name='Dense_Out'))
-        self.model.add(Activation(self.config.activation_final, name='Sigmoid_Out'))
+        self.model.add(Activation(self.config.activation_final, name='activation_Out'))
 
     def buildModelWithRegularization(self):
         if not self.config.dropout:
@@ -291,7 +291,7 @@ class RegressionModel():
             self.model.add(Dropout(rate=self.config.dropout_value if self.config.dropout else 0, name=f'dropout_{i}'))
             self.model.add(BatchNormalization())
         self.model.add(Dense(2, name='Dense_Out', kernel_regularizer=L2(l2=l2)))
-        self.model.add(Activation(self.config.activation_final, name='Sigmoid_Out'))
+        self.model.add(Activation(self.config.activation_final, name='activation_Out'))
 
     def buildModelResnet(self):
         print("Build model of type ResNet")
@@ -401,8 +401,8 @@ class RegressionModel():
     def main(self):
         dataframe = self.generate_dataframe()
 
-        scaler_input = self.load_scaler("prescaler_input_data.pkl")
-        scaler_target = self.load_scaler("prescaler_target_data.pkl")
+        scaler_input = self.load_scaler("prescaler_input_data_Range-1-1.pkl")
+        scaler_target = self.load_scaler("prescaler_target_data_Range-1-1.pkl")
 
         dataframe = self.cut_dataframe(dataframe)
         df_size = len(dataframe.index)
