@@ -7,6 +7,7 @@ import pickle
 import math
 import tensorflow as tf
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from sklearn.model_selection import train_test_split
 from keras.models import Sequential, Model
 from keras.layers import Input, Activation, Dense, BatchNormalization, Add, Dropout
 try:
@@ -39,6 +40,7 @@ class RegressionModel():
         self.model = Sequential()
         self.config = wandb.config
         self.validation_split = 0.3
+        self.center_distance = 100
     
     def __sort_key(self, file_path) -> None:
         """sorting key function to sort filenames alphabetically"""
@@ -221,12 +223,12 @@ class RegressionModel():
 
         return scaler
 
-    def cut_dataframe(self, dataframe: pd.DataFrame) -> pd.DataFrame:
+    def cut_dataframe(self, dataframe: pd.DataFrame, distance: int) -> pd.DataFrame:
         # Calculate Euclidean distance
         dataframe['distance'] = np.sqrt(dataframe['x']**2 + dataframe['y']**2)
 
         # Filter the DataFrame based on the distance threshold
-        filtered_df = dataframe[dataframe['distance'] <= self.config.distance]
+        filtered_df = dataframe[dataframe['distance'] <= distance]
 
         # Drop the 'distance' column if you don't need it anymore and return
         return filtered_df.drop(columns=['distance'])
@@ -243,16 +245,16 @@ class RegressionModel():
         return scaler.transform(data)
 
     def generate_weights(self, scaled_target_data: np.ndarray) -> np.ndarray:
-        diff_from_1 = np.linalg.norm(0.5 - scaled_target_data, axis=1)
-        output_weights = np.exp(-(diff_from_1/0.6)**2)
+        diff_from_1 = np.linalg.norm([-0.5, 0.0] - scaled_target_data, axis=1)
+        output_weights = np.exp(-(diff_from_1/0.5)**2)
 
         return output_weights
 
-    def createScheduler(self, size: int) -> ExponentialDecay:
+    def createScheduler(self, size: int, inital_learning_rate: float) -> CosineDecay:
         print("decay steps:", np.ceil((size * (1 - self.validation_split)) / self.config.batch_size) * self.config.epochs)
         print(size, self.config.batch_size, self.config.epochs)
         return CosineDecay(
-            initial_learning_rate = self.config.learning_rate,
+            initial_learning_rate = inital_learning_rate,
             decay_steps = np.ceil((size * (1 - self.validation_split)) / self.config.batch_size) * self.config.epochs,
         )
         # return ExponentialDecay(
@@ -344,7 +346,7 @@ class RegressionModel():
 
         self.model = Model(inputs=inputs, outputs=outputs, name="ChatGPT-85")
 
-    def compileModel(self, prescaler_target_data: MinMaxScaler, lr_scheduler: ExponentialDecay):
+    def compileModel(self, prescaler_target_data: MinMaxScaler, lr_scheduler: CosineDecay):
         optimizer = Adam(learning_rate= lr_scheduler)
         loss = MeanSquaredError()
 
@@ -357,12 +359,13 @@ class RegressionModel():
                 metrics.MeanXYNormRealWorld(scaler=prescaler_target_data),
                 metrics.MeanXYSquarredErrorRealWorld(scaler=prescaler_target_data),  
                 metrics.MeanXYAbsoluteErrorRealWorld(scaler=prescaler_target_data),
-                metrics.MeanXYRootSquarredErrorRealWorld(scaler=prescaler_target_data)
+                metrics.MeanXYRootSquarredErrorRealWorld(scaler=prescaler_target_data),
+                # metrics.MaxXYNormRealWorld(scaler=prescaler_target_data)
             ],
             weighted_metrics= []
         )
 
-    def trainModel(self, scaled_input_data: np.ndarray, scaled_target_data: np.ndarray, outputWeights: np.ndarray) -> None:
+    def trainModel(self, scaled_input_data: np.ndarray, scaled_target_data: np.ndarray, outputWeights: np.ndarray, validation_data) -> None:
         timestamp = time.time()
         datetime_obj = datetime.datetime.fromtimestamp(timestamp)
         # Format the datetime object as a string in your desired format
@@ -392,29 +395,55 @@ class RegressionModel():
             callbacks = callbacks,
             sample_weight= pd.Series(outputWeights).to_frame('weights'),
             shuffle=True,
-            validation_split= self.validation_split,
+            validation_data=validation_data
         )
 
-        with open(f'history/{identifier}.pkl', 'wb') as file:
-            pickle.dump(history, file)
+        # with open(f'history/{identifier}.pkl', 'wb') as file:
+        #     pickle.dump(history, file)
+
+
+    def train_test_split(self, features: pd.DataFrame, target: pd.DataFrame):
+        # Split the data into train and test sets
+        X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=self.validation_split, random_state=42)
+
+        return (X_train, X_test, y_train, y_test)
 
     def main(self):
-        dataframe = self.generate_dataframe()
+        dataframe_total = self.generate_dataframe()
+
+        X_train, X_test, y_train, y_test = self.train_test_split(dataframe_total[['A4T', 'A5T', 'A6T', 'A7T']], dataframe_total[['x', 'y']])
+
+        assert isinstance(X_train, pd.DataFrame), "dings bums no dataframe"
 
         scaler_input = self.load_scaler("prescaler_input_data_Range-1-1.pkl")
         scaler_target = self.load_scaler("prescaler_target_data_Range-1-1.pkl")
 
-        dataframe = self.cut_dataframe(dataframe)
+        # first training iteration
+        dataframe = self.cut_dataframe(dataframe_total, self.center_distance)
         df_size = len(dataframe.index)
 
-        input_data = self.generate_inputData(dataframe)
-        target_data = self.generate_targetData(dataframe)
+        train_combined = pd.concat([X_train, y_train], axis=1)
+        test_combined = pd.concat([X_test, y_test], axis=1)
 
-        scaled_input_data = self.scale(scaler_input, input_data)
-        scaled_target_data = self.scale(scaler_target, target_data)
+        train_combined_center = self.cut_dataframe(train_combined, self.center_distance)
+        test_combined_center = self.cut_dataframe(test_combined, self.center_distance)
 
-        weights = self.generate_weights(scaled_target_data)
-        lr_scheduler = self.createScheduler(df_size)
+        X_train_center = train_combined_center[['A4T', 'A5T', 'A6T', 'A7T']]
+        X_test_center = test_combined_center[['A4T', 'A5T', 'A6T', 'A7T']]
+        y_train_center = train_combined_center[['x', 'y']]
+        y_test_center = test_combined_center[['x', 'y']]
+
+        # input_data = self.generate_inputData(dataframe)
+        # target_data = self.generate_targetData(dataframe)
+
+        X_train_center = self.scale(scaler_input, X_train_center)
+        y_train_center = self.scale(scaler_target, y_train_center)
+
+        X_test_center = self.scale(scaler_input, X_test_center)
+        y_test_center = self.scale(scaler_target, y_test_center)
+
+        weights = self.generate_weights(y_train_center)
+        lr_scheduler = self.createScheduler(df_size, inital_learning_rate=self.config.learning_rate)
 
         if self.config.resnet and self.config.regularization:
             self.buildModelResnetWithRegularization()
@@ -429,7 +458,40 @@ class RegressionModel():
 
         self.compileModel(scaler_target, lr_scheduler)
 
-        self.trainModel(scaled_input_data, scaled_target_data, weights)
+        self.trainModel(X_train_center, y_train_center, weights, validation_data=(X_test_center, y_test_center))
+
+        # second training iteration
+
+        dataframe = self.cut_dataframe(dataframe_total, self.config.distance)
+        df_size = len(dataframe.index)
+
+        train_combined = pd.concat([X_train, y_train], axis=1)
+        test_combined = pd.concat([X_test, y_test], axis=1)
+
+        train_combined_center = self.cut_dataframe(train_combined, self.config.distance)
+        test_combined_center = self.cut_dataframe(test_combined, self.config.distance)
+
+        X_train_center = train_combined_center[['A4T', 'A5T', 'A6T', 'A7T']]
+        X_test_center = test_combined_center[['A4T', 'A5T', 'A6T', 'A7T']]
+        y_train_center = train_combined_center[['x', 'y']]
+        y_test_center = test_combined_center[['x', 'y']]
+
+        X_train_center = self.scale(scaler_input, X_train_center)
+        y_train_center = self.scale(scaler_target, y_train_center)
+
+        X_test_center = self.scale(scaler_input, X_test_center)
+        y_test_center = self.scale(scaler_target, y_test_center)
+
+        # input_data = self.generate_inputData(dataframe)
+        # target_data = self.generate_targetData(dataframe)
+
+        weights = self.generate_weights(y_train_center)
+
+        smaller_learning_rate = 0.0025
+        lr_scheduler = self.createScheduler(df_size, inital_learning_rate=smaller_learning_rate)
+
+        self.compileModel(scaler_target, lr_scheduler)
+        self.trainModel(X_train_center, y_train_center, weights, validation_data=(X_test_center, y_test_center))
 
 
 if __name__ == "__main__":
