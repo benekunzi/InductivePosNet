@@ -250,12 +250,12 @@ class RegressionModel():
 
         return output_weights
 
-    def createScheduler(self, size: int, inital_learning_rate: float) -> CosineDecay:
-        print("decay steps:", np.ceil((size * (1 - self.validation_split)) / self.config.batch_size) * self.config.epochs)
-        print(size, self.config.batch_size, self.config.epochs)
+    def createScheduler(self, size: int, inital_learning_rate: float, epochs: int) -> CosineDecay:
+        print("decay steps:", np.ceil((size * (1 - self.validation_split)) / self.config.batch_size) * epochs)
+        print(size, self.config.batch_size, epochs)
         return CosineDecay(
             initial_learning_rate = inital_learning_rate,
-            decay_steps = np.ceil((size * (1 - self.validation_split)) / self.config.batch_size) * self.config.epochs,
+            decay_steps = np.ceil((size * (1 - self.validation_split)) / self.config.batch_size) * epochs,
         )
         # return ExponentialDecay(
         #     initial_learning_rate= self.config.learning_rate,
@@ -360,7 +360,8 @@ class RegressionModel():
                 metrics.MeanXYSquarredErrorRealWorld(scaler=prescaler_target_data),  
                 metrics.MeanXYAbsoluteErrorRealWorld(scaler=prescaler_target_data),
                 metrics.MeanXYRootSquarredErrorRealWorld(scaler=prescaler_target_data),
-                # metrics.MaxXYNormRealWorld(scaler=prescaler_target_data)
+                metrics.MaxXYNormRealWorld(scaler=prescaler_target_data),
+                metrics.WithinTresholdXYNormRealWorld(scaler=prescaler_target_data)
             ],
             weighted_metrics= []
         )
@@ -443,7 +444,7 @@ class RegressionModel():
         y_test_center = self.scale(scaler_target, y_test_center)
 
         weights = self.generate_weights(y_train_center)
-        lr_scheduler = self.createScheduler(df_size, inital_learning_rate=self.config.learning_rate)
+        lr_scheduler = self.createScheduler(df_size, inital_learning_rate=self.config.learning_rate, epochs=self.config.epochs)
 
         if self.config.resnet and self.config.regularization:
             self.buildModelResnetWithRegularization()
@@ -488,7 +489,7 @@ class RegressionModel():
         weights = self.generate_weights(y_train_center)
 
         smaller_learning_rate = 0.0025
-        lr_scheduler = self.createScheduler(df_size, inital_learning_rate=smaller_learning_rate)
+        lr_scheduler = self.createScheduler(df_size, inital_learning_rate=smaller_learning_rate, epochs=self.config.epochs)
 
         self.compileModel(scaler_target, lr_scheduler)
         self.trainModel(X_train_center, y_train_center, weights, validation_data=(X_test_center, y_test_center))
