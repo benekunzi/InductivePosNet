@@ -360,8 +360,8 @@ class RegressionModel():
                 metrics.MeanXYSquarredErrorRealWorld(scaler=prescaler_target_data),  
                 metrics.MeanXYAbsoluteErrorRealWorld(scaler=prescaler_target_data),
                 metrics.MeanXYRootSquarredErrorRealWorld(scaler=prescaler_target_data),
-                metrics.MaxXYNormRealWorld(scaler=prescaler_target_data),
-                metrics.WithinTresholdXYNormRealWorld(scaler=prescaler_target_data)
+                metrics.CenterMaxXYNormRealWorld(scaler=prescaler_target_data),
+                metrics.CenterWithinTresholdXYNormRealWorld(scaler=prescaler_target_data)
             ],
             weighted_metrics= []
         )
@@ -460,6 +460,7 @@ class RegressionModel():
         self.compileModel(scaler_target, lr_scheduler)
 
         self.trainModel(X_train_center, y_train_center, weights, validation_data=(X_test_center, y_test_center))
+        # self.trainModel(X_train_center, y_train_center, weights, validation_data=(X_train_center, y_train_center))
 
         # second training iteration
 
@@ -493,6 +494,7 @@ class RegressionModel():
 
         self.compileModel(scaler_target, lr_scheduler)
         self.trainModel(X_train_center, y_train_center, weights, validation_data=(X_test_center, y_test_center))
+        # self.trainModel(X_train_center, y_train_center, weights, validation_data=(X_train_center, y_train_center))
 
 
 if __name__ == "__main__":
