@@ -10,4 +10,4 @@
 #SBATCH --mem-per-cpu=4G
 
 #SBATCH --array=1-10
-python3 main.py --name "lstm_test_save_1" --batch_size 256 
+python3 main.py --name "lstm_test_updatedCoordinate" --batch_size 256 
