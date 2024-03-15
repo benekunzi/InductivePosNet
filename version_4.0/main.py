@@ -190,8 +190,11 @@ class RegressionModel():
 
         return np.array(linear_functions_real)
 
-    def __generate_voltage_values(self, linear_functions_rv: np.ndarray) -> np.ndarray:
+    def __generate_voltage_values(self, linear_functions_rv: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         voltage_values = []
+        coordinate_values = linear_functions_rv
+        counter = 0
+        n_frames = len(self.merged_df_list)
 
         for height in self.merged_df_list:
             for linear in linear_functions_rv:
@@ -200,17 +203,21 @@ class RegressionModel():
                     temp_list.append([height[i].at[coord[0], coord[1]] for i in range(len(self.merged_df_list[0]))])
                 voltage_values.append(temp_list)
 
-        return np.array(voltage_values)
+            if counter < n_frames-1:
+                coordinate_values = np.concatenate((coordinate_values, linear_functions_rv), axis=0)
+            counter += 1
+
+        return (np.array(voltage_values), coordinate_values)
     
-    def __generate_coordinates(self, linear_functions_rv: np.ndarray):
-        temp_linear_real = linear_functions_rv
-        coordinate_values = []
+    # def __generate_coordinates(self, linear_functions_rv: np.ndarray):
+    #     temp_linear_real = linear_functions_rv
+    #     coordinate_values = []
 
-        for i in range(0, len(self.merged_df_list)):
-            for linear in temp_linear_real:
-                coordinate_values.append(linear[linear.shape[0]-1])
+    #     for i in range(0, len(self.merged_df_list)):
+    #         for linear in temp_linear_real:
+    #             coordinate_values.append(linear[linear.shape[0]-1])
 
-        return np.array(coordinate_values)
+    #     return np.array(coordinate_values)
 
     def __generate_all_paths(self, scaled_input_data: np.ndarray, scaled_target_data: np.ndarray):
         array_length = scaled_input_data.shape[0]
@@ -222,8 +229,6 @@ class RegressionModel():
             linear_length = scaled_input_data[i].shape[0]
             temp_input = []
             for j in range(0, linear_length):
-                scaled_target_temp_full.append(scaled_target_data[i])
-
                 temp_input.append(scaled_input_data[i][j])
 
                 scaled_input_temp = temp_input
@@ -231,12 +236,11 @@ class RegressionModel():
                 for k in range(0, scaled_input_data[i].shape[0] - j - 1):
                     scaled_input_temp = np.vstack((np.array([2, 2, 2, 2]), scaled_input_temp))
 
+                scaled_target_temp_full.append(scaled_target_data[i][j])
                 scaled_input_temp_full.append(scaled_input_temp)
 
         scaled_input_temp_full = np.array(scaled_input_temp_full)
         scaled_target_temp_full = np.array(scaled_target_temp_full)
-
-        print(scaled_input_temp_full.shape, scaled_target_temp_full.shape)
 
         return (scaled_input_temp_full, scaled_target_temp_full)
 
@@ -260,11 +264,10 @@ class RegressionModel():
     def generate_targetData(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """Generates target data"""
         return dataframe[["x", "y"]]
-    
+
     def load_scaler(self, path_scaler: str):
         with open(path_scaler, 'rb') as file:
             scaler = pickle.load(file)
-
         return scaler
 
     def scale(self, scaler, data: pd.DataFrame) -> np.ndarray:
@@ -385,23 +388,30 @@ class RegressionModel():
 
         print(linear_functions_rv.shape)
 
-        voltage_values = self.__generate_voltage_values(linear_functions_rv)
+        voltage_values, coordinate_values = self.__generate_voltage_values(linear_functions_rv)
 
-        coordinate_values = self.__generate_coordinates(linear_functions_rv)
+        # coordinate_values = self.__generate_coordinates(linear_functions_rv)
+
+        print("shape of pure linear functions setup without extension")
+        print(voltage_values.shape, coordinate_values.shape)
 
         scaler_input = self.load_scaler("prescaler_input_data_Range-1-1.pkl")
         scaler_target = self.load_scaler("prescaler_target_data_Range-1-1.pkl")
 
         scaled_input_data = []
-
         for i in range(voltage_values.shape[0]):
             scaled_input_data.append(scaler_input.transform(voltage_values[i]))
         scaled_input_data = np.array(scaled_input_data)
 
-        scaled_target_data = scaler_target.transform(coordinate_values)
+        scaled_target_data = []
+        for c in coordinate_values:
+            scaled_target_data.append(scaler_target.transform(c))
         scaled_target_data = np.array(scaled_target_data)
 
         scaled_input_data, scaled_target_data = self.__generate_all_paths(scaled_input_data, scaled_target_data)
+
+        print("shape of linear functions setup with extension")
+        print(scaled_input_data.shape, scaled_target_data.shape)
 
         X_train, X_test, y_train, y_test = self.train_test_split(scaled_input_data, scaled_target_data)
         
